@@ -1,6 +1,7 @@
 package ru.mail.polis;
 
 import org.jetbrains.annotations.NotNull;
+import ru.mail.polis.tfniyaff.Node;
 
 import java.io.File;
 import java.io.IOException;
@@ -46,8 +47,8 @@ final class KVServiceFactory {
         if (!data.isDirectory()) {
             throw new IllegalArgumentException("Path is not a directory: " + data);
         }
-
+        return new Node(port,data, topology);
         // TODO: Implement me
-        throw new UnsupportedOperationException("Implement me!");
+        //throw new UnsupportedOperationException("Implement me!");
     }
 }
