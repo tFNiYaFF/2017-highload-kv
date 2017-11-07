@@ -69,7 +69,7 @@ $ gradle run
   * `202 Accepted`, если хотя бы `ack` из `from` реплик подтвердили операцию
   * `504 Not Enough Replicas`, если не набралось `ack` подтверждений из всего множества `from` реплик
 
-Если параметр `replicas` не указан, то в качества `ack` используется значение по умолчанию, равное **кворуму** от количества узлов в кластере,
+Если параметр `replicas` не указан, то в качестве `ack` используется значение по умолчанию, равное **кворуму** от количества узлов в кластере,
 а `from` равен общему количеству узлов в кластере, например:
 * `1/1` для кластера из одного узла
 * `2/2` для кластера из двух узлов
@@ -99,7 +99,100 @@ $ gradle run
 Набор тестов будет расширяться, поэтому не забывайте **подмёрдживать upstream** и **реагировать на замечания**.
 
 ## Этап 3. Нагрузочное тестирование и оптимизация (deadline 2017-12-05)
-TBD
+На этом этапе нам предстоит:
+* Подать на кластер нагрузку с помощью инструментов нагрузочного тестирования
+* Воспользоваться профайлером, чтобы определить места для улучшений
+* Пооптимизировать, чтобы улучшить характеристики хранилища
+* Повторить процедуру
+
+### Окружение
+План-минимум -- поднять 3 локальных узла:
+```
+$ ./gradlew run
+```
+
+План-максимум -- поднять 3 узла в отдельных контейнерах/приложениях.
+
+### Что измеряем
+* Пропускную способность (**успешные запросы/сек**)
+* Задержку (обязательно **мс/запрос** в **среднем**, а также желательно **90%** и **99%**-перцентили)
+* Не менее 1 мин
+
+### Нагрузка
+* Обязательно только `PUT` (c/без перезаписи) с `replicas=2/3` и `replicas=3/3`
+* Обязательно только `GET` (на большом наборе ключей с/без повторов) с `replicas=2/3` и `replicas=3/3`
+* Желательно смесь `PUT`/`GET` 50/50 (с/без перезаписи) с `replicas=2/3` и `replicas=3/3`
+
+Каждый вид нагрузки тестируем в режимах 1/2/4 потока/соединения.
+
+Если готовы по-взрослому, то адаптируйте [Yahoo! Cloud Serving Benchmark](https://github.com/brianfrankcooper/YCSB) к своему хранилищу и получите бонусные баллы.
+
+### Нагрузочное тестирование
+#### `curl`
+Smoke test, только в один поток и статистику нужно считать самим, но низкий порог входа, чтобы начать:
+```
+$ for i in $(seq 0 1000000); do time curl -X PUT -d value$i http://localhost:8080/v0/entity?id=key$i; done
+...
+```
+
+#### `wrk`
+Более изощрённые виды нагрузки, в т.ч. с Keep-Alive и многопоточно, но необходимо пописать на Lua.
+См. [сайт проекта](https://github.com/wg/wrk) и [примеры скриптов](https://github.com/wg/wrk/tree/master/scripts).
+
+Выглядеть может так:
+```
+$ wrk --latency -c4 -d5m -s scripts/put.lua http://localhost:8080
+Running 5m test @ http://localhost:8080
+  2 threads and 4 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.80ms    8.37ms 345.00ms   99.61%
+    Req/Sec     1.56k   238.51     2.20k    74.12%
+  Latency Distribution
+     50%    1.09ms
+     75%    1.33ms
+     90%    2.59ms
+     99%    7.41ms
+  928082 requests in 5.00m, 83.20MB read
+Requests/sec:   3093.04
+Transfer/sec:    283.93KB
+$ wrk --latency -c4 -d1m -s scripts/get.lua http://localhost:8080
+Running 1m test @ http://localhost:8080
+  2 threads and 4 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.48ms    1.84ms  47.85ms   97.07%
+    Req/Sec     1.55k   297.86     2.04k    58.75%
+  Latency Distribution
+     50%    1.18ms
+     75%    1.40ms
+     90%    1.66ms
+     99%    9.95ms
+  185247 requests in 1.00m, 21.16MB read
+Requests/sec:   3085.96
+Transfer/sec:    360.95KB
+```
+
+#### Yandex.Tank
+Возможно всё, но необходимо написать генератор [патронов](http://yandextank.readthedocs.io/en/latest/tutorial.html#preparing-requests) и всё настроить.
+См. [сайт проекта](https://overload.yandex.net) и [tutorial](https://overload.yandex.net/login/?next=/mainpage/guide#install).
+Если получится, то будут бонусные баллы.
+
+### Профилирование
+Чтобы сузить область поиска, можно попробовать протестировать чисто сетевую часть, используя простую in-memory реализацию хранилища.
+
+#### `jvisualvm`
+Входит в состав JDK и [поддерживает профилирование](https://docs.oracle.com/javase/8/docs/technotes/guides/visualvm/profiler.html).
+Если возникает ошибка при запуске профилирования, укажите опцию JVM `-Xverify:none`.
+
+#### Java Mission Control
+Также [входит в состав JDK](https://docs.oracle.com/javacomponents/jmc-5-5/jmc-user-guide/jmc.htm#JMCCI113) и бесплатен для разработки, но не забудьте включить [Java Flight Recorder](https://docs.oracle.com/javacomponents/jmc-5-4/jfr-runtime-guide/about.htm#JFRUH174).
+
+#### `async-profiler`
+Бесплатный и с открытым исходным кодом.
+См. [сайт проекта](https://github.com/jvm-profiling-tools/async-profiler).
+
+### Report
+Присылайте PR, в который входят commit'ы с оптимизациями по результатам профилирования, а также файл `LOADTEST.md`, содержащий результаты
+нагрузочного тестирования и профилирования до и после оптимизаций (в виде дампов консоли, скриншотов и/или графиков).
 
 ## Bonus (deadline 2017-12-19)
 Фичи, которые позволяют получить дополнительные баллы:
@@ -109,6 +202,7 @@ TBD
 * Conflict resolution: [отметки времени Лампорта](https://en.wikipedia.org/wiki/Lamport_timestamps) или [векторные часы](https://en.wikipedia.org/wiki/Vector_clock)
 * Expire: возможность указания [времени жизни записей](https://en.wikipedia.org/wiki/Time_to_live)
 * Server-side processing: трансформация данных с помощью скрипта, запускаемого на узлах кластера через API
+* Нагрузочное тестирование при помощи [Y!CSB](https://github.com/brianfrankcooper/YCSB) или [Yandex.Tank](https://overload.yandex.net)
 * Предложите своё
 
 Если решите реализовать что-то бонусное, обязательно сначала обсудите это с преподавателем.
