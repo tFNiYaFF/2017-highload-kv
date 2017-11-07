@@ -41,6 +41,7 @@ public class ReplicationManager{
             if (!host.equals(master)) {
                 HttpURLConnection testConnection = (HttpURLConnection) new URL(host + "/v0/status").openConnection();
                 testConnection.setRequestMethod("GET");
+                testConnection.setConnectTimeout(400);
                 int testCode = 0;
                 try {
                     testCode = testConnection.getResponseCode();
@@ -60,6 +61,7 @@ public class ReplicationManager{
                     HttpURLConnection workConnection = (HttpURLConnection) new URL(host + "/v0/entity?"+query).openConnection();
                     workConnection.setRequestMethod(method);
                     workConnection.setRequestProperty("Replication","slave");
+                    workConnection.setConnectTimeout(400);
                     if(body!=null) {
                         workConnection.setDoOutput(true);
                         DataOutputStream wr = new DataOutputStream(workConnection.getOutputStream());
