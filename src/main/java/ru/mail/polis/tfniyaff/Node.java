@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Set;
 
 import static ru.mail.polis.tfniyaff.Status.REPLICATION_FAILED;
@@ -129,7 +130,7 @@ public class Node implements KVService {
             File file = new File(data.getAbsolutePath() + delimiter + id);
             if (requestMethod.equalsIgnoreCase("GET")) {
                 if (master) {
-                    ReplicationManager rm = new ReplicationManager(topology, ack, from, query, "GET", "http:/" + httpExchange.getLocalAddress().toString(), null);
+                    ReplicationManager rm = new ReplicationManager(topology, ack, from, query, "GET", "http:/" + httpExchange.getLocalAddress().toString(), null, id);
                     Status status = rm.replication();
                     if (status == REPLICATION_SUCCESS) {
                         if (!file.exists()) {
@@ -158,7 +159,7 @@ public class Node implements KVService {
                     }
                 }
                 if (master) {
-                    ReplicationManager rm = new ReplicationManager(topology, ack, from, query, "PUT", "http:/" + httpExchange.getLocalAddress().toString(), buffer);
+                    ReplicationManager rm = new ReplicationManager(topology, ack, from, query, "PUT", "http:/" + httpExchange.getLocalAddress().toString(), buffer, id);
                     if (rm.replication() == REPLICATION_SUCCESS) {
                         sendHttpResponse(httpExchange, 201, "Created");
                     } else {
@@ -170,7 +171,7 @@ public class Node implements KVService {
             } else if (requestMethod.equalsIgnoreCase("DELETE")) {
                 if (!file.exists() || file.delete()) {
                     if (master) {
-                        ReplicationManager rm = new ReplicationManager(topology, ack, from, query, "DELETE", "http:/" + httpExchange.getLocalAddress().toString(), null);
+                        ReplicationManager rm = new ReplicationManager(topology, ack, from, query, "DELETE", "http:/" + httpExchange.getLocalAddress().toString(), null, id);
                         if (rm.replication() == REPLICATION_SUCCESS) {
                             sendHttpResponse(httpExchange, 202, "Accepted");
                         } else {
