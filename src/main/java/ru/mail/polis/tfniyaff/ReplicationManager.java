@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Set;
 
 import static ru.mail.polis.tfniyaff.Status.*;
@@ -19,12 +20,14 @@ public class ReplicationManager {
     private Set<String> topology;
     private int ack;
     private int from;
+    private String id;
     private String query;
     private String method;
     private String master;
     private byte[] body;
+    private static HashMap<String, Integer> GETCache = new HashMap<>();
 
-    public ReplicationManager(Set<String> topology, int ack, int from, String query, String method, String master, byte[] body) {
+    public ReplicationManager(Set<String> topology, int ack, int from, String query, String method, String master, byte[] body, String id) {
         this.method = method;
         this.query = query;
         this.topology = topology;
@@ -32,6 +35,7 @@ public class ReplicationManager {
         this.master = master;
         this.body = body;
         this.from = from;
+        this.id = id;
     }
 
     public Status replication() throws IOException {
@@ -42,6 +46,18 @@ public class ReplicationManager {
             if (connections == from) break;
             host = host.replace("localhost", "127.0.0.1");
             if (!host.equals(master)) {
+                if (GETCache.containsKey(host + "/" + id) && !method.equalsIgnoreCase("GET")) {
+                    GETCache.remove(host + "/" + id);
+                }
+                if (GETCache.containsKey(host + "/" + id) && method.equalsIgnoreCase("GET")) {
+                    if (GETCache.get(host + "/" + id) == 200) {
+                        successReplication++;
+                        connections++;
+                        continue;
+                    } else {
+                        return REPLICATION_SERVER_FILE_NOT_FOUND;
+                    }
+                }
                 HttpURLConnection testConnection = (HttpURLConnection) new URL(host + "/v0/status").openConnection();
                 testConnection.setRequestMethod("GET");
                 testConnection.setConnectTimeout(100);
@@ -71,7 +87,7 @@ public class ReplicationManager {
                     workConnection.setConnectTimeout(100);
                     if (body != null) {
                         workConnection.setDoOutput(true);
-                        try(DataOutputStream wr = new DataOutputStream(workConnection.getOutputStream())) {
+                        try (DataOutputStream wr = new DataOutputStream(workConnection.getOutputStream())) {
                             wr.write(body);
                             wr.flush();
                         }
@@ -82,7 +98,11 @@ public class ReplicationManager {
                         e.printStackTrace();
                     }
                     if (code == 404) {
+                        GETCache.put(host + "/" + id, 404);
                         return REPLICATION_SERVER_FILE_NOT_FOUND;
+                    }
+                    if (method.equalsIgnoreCase("GET")) {
+                        GETCache.put(host + "/" + id, 200);
                     }
                     successReplication++;
                 }
